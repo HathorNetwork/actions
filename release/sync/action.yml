@@ -51,6 +51,7 @@ runs:
         FROM_BRANCH: ${{ inputs.from_branch }}
         TO_BRANCH: ${{ inputs.to_branch }}
       id: create_pull
+      shell: bash
       run: |
         echo "Finding author of release $TAG"
         AUTHOR=$(gh release view $TAG --json author -q '.author.login')
@@ -111,6 +112,7 @@ runs:
         PROJECT_ID: ${{ steps.proj_columns.outputs.PROJECT_ID }}
         FIELD_ID: ${{ steps.proj_columns.outputs.FIELD_ID }}
         OPTION_ID: ${{ steps.proj_columns.outputs.OPTION_ID }}
+      shell: bash
       run: |
         ITEM_ID=$(gh project item-add $BOARD_NUMBER \
           --owner $BOARD_OWNER \
