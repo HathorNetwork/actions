@@ -87,6 +87,7 @@ runs:
         BOARD_NUMBER: ${{ inputs.board_number }}
         COLUMN_FIELD: ${{ inputs.column_field }}
         COLUMN_NAME: ${{ inputs.column_name }}
+      shell: bash
       run: |
         FIELD_QUERY=".fields[] | select(.name==\"$COLUMN_FIELD\") | .id"
         FIELD_ID=$(gh project field-list $BOARD_NUMBER --owner $BOARD_OWNER --format json -q "$FIELD_QUERY")
