@@ -1,0 +1,121 @@
+name: Sync Release
+description: 'Create a PR to merge the release branch back into the base branch.'
+
+inputs:
+  github_token:
+    description: 'Github token'
+    required: true
+  target_tag:
+    description: 'Target tag'
+    required: true
+  from_branch:
+    description: 'Release branch that will merge into `to_branch`'
+    required: true
+    default: 'release'
+  to_branch:
+    description: 'target branch of the PR'
+    required: true
+    default: 'master'
+  update_board:
+    description: 'Wheather to create a card on a github board about the PR'
+    required: true
+    default: true
+  board_owner:
+    description: 'Owner of the board to update, required by gh cli'
+    required: true
+    default: 'HathorNetwork'
+  board_number:
+    description: 'Id of the board to update'
+    required: true
+    default: 15
+  column_field:
+    description: 'Column indicating status of the card'
+    required: true
+    default: 'Status'
+  column_name:
+    description: 'Value to put on the column for the card'
+    required: true
+    default: 'In Progress (Done)'
+
+
+runs:
+  using: "composite"
+  steps:
+      # https://github.com/actions/checkout/releases/tag/v4.1.6
+    - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
+
+    - name: Create Pull Request
+      env:
+        TAG: ${{ inputs.target_tag }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        FROM_BRANCH: ${{ inputs.from_branch }}
+        TO_BRANCH: ${{ inputs.to_branch }}
+      id: create_pull
+      run: |
+        echo "Finding author of release $TAG"
+        AUTHOR=$(gh release view $TAG --json author -q '.author.login')
+        echo "release author: $AUTHOR"
+
+        # This just checks that the user exists, if the release could not be found the AUTHOR
+        # would be "release not found" which is a non-existant user.
+        [$(gh api -X GET search/users -f q=$AUTHOR) == "0"] && echo "Could not find author" && exit 1;
+
+        echo "Creating chore/sync-release-$TAG from release branch"
+        git fetch origin $TO_BRANCH:$TO_BRANCH $FROM_BRANCH:$FROM_BRANCH
+        git checkout $FROM_BRANCH
+        git checkout -b chore/sync-release-$TAG
+        git push -u origin chore/sync-release-$TAG
+
+        # The assignee will be the user that manually published the release
+        PR_URL=$(gh pr create \
+          --title "chore: [${{ github.ref_name }}] Merge release into master" \
+          --body "Automated PR to merge `release` branch into `master` based on release event." \
+          --base "$TO_BRANCH" \
+          --head "chore/sync-release-$TAG" \
+          --assignee "$AUTHOR")
+
+        # Store values in step output
+        echo "PR_URL=$PR_URL" >> "$GITHUB_OUTPUT"
+
+    - name: Fetch project and column data
+      id: proj_columns
+      if: ${{ inputs.update_board }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        BOARD_OWNER: ${{ inputs.board_owner }}
+        BOARD_NUMBER: ${{ inputs.board_number }}
+        COLUMN_FIELD: ${{ inputs.column_field }}
+        COLUMN_NAME: ${{ inputs.column_name }}
+      run: |
+        FIELD_QUERY=".fields[] | select(.name==\"$COLUMN_FIELD\") | .id"
+        FIELD_ID=$(gh project field-list $BOARD_NUMBER --owner $BOARD_OWNER --format json -q "$FIELD_QUERY")
+
+        OPTION_QUERY=".fields[] | select(.name==\"$COLUMN_FIELD\") | .options[] | select(.name==\"$COLUMN_NAME\") | .id"
+        OPTION_ID=$(gh project field-list $BOARD_NUMBER --owner $BOARD_OWNER --format json -q "$OPTION_QUERY")
+
+        PROJECT_QUERY=".projects[] | select(.number==$BOARD_NUMBER) | .id"
+        PROJECT_ID=$(gh project list --owner $BOARD_OWNER --format json -q "$PROJECT_QUERY")
+
+        # Store values in step output
+        echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+        echo "FIELD_ID=$FIELD_ID" >> "$GITHUB_OUTPUT"
+        echo "OPTION_ID=$OPTION_ID" >> "$GITHUB_OUTPUT"
+
+    - name: Associate PR with project
+      if: ${{ inputs.update_board }}
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        BOARD_OWNER: ${{ inputs.board_owner }}
+        BOARD_NUMBER: ${{ inputs.board_number }}
+        PR_URL: ${{ steps.create_pull.outputs.PR_URL }}
+        PROJECT_ID: ${{ steps.proj_columns.outputs.PROJECT_ID }}
+        FIELD_ID: ${{ steps.proj_columns.outputs.FIELD_ID }}
+        OPTION_ID: ${{ steps.proj_columns.outputs.OPTION_ID }}
+      run: |
+        ITEM_ID=$(gh project item-add $BOARD_NUMBER \
+          --owner $BOARD_OWNER \
+          --url "$PR_URL" \
+          --format json \
+          -q '.id' )
+
+        gh project item-edit --project-id $PROJECT_ID --id $ITEM_ID --field-id $FIELD_ID --single-select-option-id $OPTION_ID
