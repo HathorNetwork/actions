@@ -98,23 +98,8 @@ runs:
         PROJECT_QUERY=".projects[] | select(.number==$BOARD_NUMBER) | .id"
         PROJECT_ID=$(gh project list --owner $BOARD_OWNER --format json -q "$PROJECT_QUERY")
 
-        # Store values in step output
-        echo "PROJECT_ID=$PROJECT_ID" >> "$GITHUB_OUTPUT"
-        echo "FIELD_ID=$FIELD_ID" >> "$GITHUB_OUTPUT"
-        echo "OPTION_ID=$OPTION_ID" >> "$GITHUB_OUTPUT"
+        echo "Creating a new item on project $PROJECT_ID and updating $FIELD_ID to $OPTION_ID"
 
-    - name: Associate PR with project
-      if: ${{ inputs.update_board }}
-      env:
-        GH_TOKEN: ${{ inputs.github_token }}
-        BOARD_OWNER: ${{ inputs.board_owner }}
-        BOARD_NUMBER: ${{ inputs.board_number }}
-        PR_URL: ${{ steps.create_pull.outputs.PR_URL }}
-        PROJECT_ID: ${{ steps.proj_columns.outputs.PROJECT_ID }}
-        FIELD_ID: ${{ steps.proj_columns.outputs.FIELD_ID }}
-        OPTION_ID: ${{ steps.proj_columns.outputs.OPTION_ID }}
-      shell: bash
-      run: |
         ITEM_ID=$(gh project item-add $BOARD_NUMBER \
           --owner $BOARD_OWNER \
           --url "$PR_URL" \
